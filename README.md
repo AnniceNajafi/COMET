@@ -75,11 +75,11 @@ data.inputs <- read.csv(paste0(tables.dir, "DataTableTest.csv"), sep=",")
 ```
 
 Step IV. Run the pipeline
-For the example dataset, data coming from timepoints 7.33, 8, and 10 came were going through MET. 
+For the example dataset, data coming from timepoints 7.33, 8, and 10 came were going through MET. To parallelize your code over cores set the parallelize argument to 'TRUE' for the 'generate_pipeline_files' function. 
 
 ```
 COMET::start_pipeline(tables.dir, input.data.dir)
-COMET::generate_pipeline_files(data.inputs, tables.dir, input.data.dir)
+COMET::generate_pipeline_files(data.inputs, tables.dir, input.data.dir, parallelize=TRUE)
 COMET::calculate_conf_intervals(data.inputs)
 COMET::DTW_calculate(data.inputs,  c(7.33, 8, 10))
 fit.all.data(data.inputs, c(7.33, 8, 10)) ->final.result
