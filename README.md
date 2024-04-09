@@ -39,7 +39,7 @@ library(devtools)
 Step II. Install the COMET package
 
 ```
-devtools::install_github("TAMUGeorgeGroup/COMET")
+devtools::install_github("AnniceNajafi/COMET")
 ```
 
 Step III. Make sure that you set these three variables to the correct directory names
