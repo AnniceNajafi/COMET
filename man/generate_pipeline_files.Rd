@@ -6,7 +6,7 @@
 number of EMT genes to minimize the DTW distance between the flow cytometry
 trajectories and data}
 \usage{
-generate_pipeline_files(data.inputs, tables.dir, input.data.dir)
+generate_pipeline_files(data.inputs, tables.dir, input.data.dir, parallelize)
 }
 \arguments{
 \item{data.inputs}{the input datasheet stored in a csv file in the tables dir}
@@ -16,6 +16,9 @@ for the data and metadata}
 
 \item{input.data.dir}{this is the directory where the input file
 should be saved in}
+
+\item{parallelize}{this boolean variable indicates whether code is parallelized
+over cores or not, set parallelize to 'TRUE' for parallelizing code over cores}
 }
 \value{
 does not return, saves the files in the COMET_populated_files dir

@@ -53,143 +53,146 @@ start_pipeline<-function(tables.dir, input.data.dir){
 #' @export
 run_pipeline<- function(data.inputs, tables.dir, input.data.dir, cutoff){
 
+
   for(k in 1:nrow(data.inputs)){
-    for(turn in 1:10){
-    data.inputs[k,]->data.input #For demonstration purposes we only read the first file
-    data <- fread(file.path(paste0(input.data.dir,data.input$DataPath)))
-    data$V1->gene.names #Extract gene names
-    meta.data <- fread(file.path(paste0(input.data.dir,data.input$MetaData)))
 
-    sort(unique(meta.data$Time))->time.points
-    time.points->timepoints
+    for(turn in 1:4) {
+      data.inputs[k,]->data.input #For demonstration purposes we only read the first file
+      data <- fread(file.path(paste0(input.data.dir,data.input$DataPath)))
+      data$V1->gene.names #Extract gene names
+      meta.data <- fread(file.path(paste0(input.data.dir,data.input$MetaData)))
 
-    #Step I. library size normalization
-    rownames(data)<-gene.names #Set the gene names
-    data$V1 <- NULL
-    t(data)->data #Transpose data
-    colnames(data)<- gene.names
-    rownames(data)<-as.character(seq(1, length(rownames(data))))#Change rownames to numbers so we can feed to MAGIC
+      sort(unique(meta.data$Time))->time.points
+      time.points->timepoints
 
-    #Filter cells having at least 10 expressed genes
-    keep_cols <- colSums(data > 0) > 10
-    data.filtered.not.norm <- data[,keep_cols]
+      #Step I. library size normalization
+      rownames(data)<-gene.names #Set the gene names
+      data$V1 <- NULL
+      t(data)->data #Transpose data
+      colnames(data)<- gene.names
+      rownames(data)<-as.character(seq(1, length(rownames(data))))#Change rownames to numbers so we can feed to MAGIC
 
-    #library size normalize
-    data.filtered <- library.size.normalize(data)
+      #Filter cells having at least 10 expressed genes
+      keep_cols <- colSums(data > 0) > 10
+      data.filtered.not.norm <- data[,keep_cols]
 
-    #Find highly variable genes
-    as.data.frame(library.size.normalize(data.filtered.not.norm))->data.df
-    data.df[colnames(data.df) %in% EMT.genes]->data.df
+      #library size normalize
+      data.filtered <- library.size.normalize(data)
 
-    #Choose a specific cutoff of highly variable genes
-    Seurat::CreateSeuratObject(t(data.df))->seur
-    Seurat::FindVariableFeatures(seur, selection.method='vst', nfeatures=200)->seur
-    top.var.genes <- head(Seurat::VariableFeatures(seur), cutoff)
+      #Find highly variable genes
+      as.data.frame(library.size.normalize(data.filtered.not.norm))->data.df
+      data.df[colnames(data.df) %in% EMT.genes]->data.df
 
-    data_MAGIC <- Rmagic::magic(data.filtered, genes=top.var.genes,
-                                knn=15)
-    #Add time to MAGIC data
-    as.data.frame(data_MAGIC)->data.magic
-    data.magic$time <- meta.data$Time
+      #Choose a specific cutoff of highly variable genes
+      Seurat::CreateSeuratObject(t(data.df))->seur
+      Seurat::FindVariableFeatures(seur, selection.method='vst', nfeatures=200)->seur
+      top.var.genes <- head(Seurat::VariableFeatures(seur), cutoff)
+
+      data_MAGIC <- Rmagic::magic(data.filtered, genes=top.var.genes,
+                                  knn=15)
+      #Add time to MAGIC data
+      as.data.frame(data_MAGIC)->data.magic
+      data.magic$time <- meta.data$Time
 
 
-    for(i in 1:length(timepoints)){
-      meta.data$color[meta.data$Time==timepoints[i]]<-color.scheme[i]
-      meta.data$Time[meta.data$Time==timepoints[i]]<-timepoints[i]
+      for(i in 1:length(timepoints)){
+        meta.data$color[meta.data$Time==timepoints[i]]<-color.scheme[i]
+        meta.data$Time[meta.data$Time==timepoints[i]]<-timepoints[i]
+      }
+
+      umapped <- umap(data.magic[1:(length(colnames(data.magic))-1)])
+      meta.data$Time->my.colors
+
+      for(i in 1:length(timepoints)){
+        my.colors[my.colors==timepoints[i]]<-color.scheme[i]
+      }
+      #We are considering only 3 states with 1 hybrid
+      states.no <- 3
+      kmeans(umapped$layout, states.no)->model
+
+      data.frame(as.data.frame(umapped$layout)$V1, as.data.frame(umapped$layout)$V2, model$cluster)->df.model
+
+      for(state in 1:states.no){
+        name <- paste0("df.model.", state)
+        df.model %>% filter(model.cluster==state)->df.model.hold
+        assign(name, df.model.hold)
+      }
+
+      pca_x <- princomp(df.model[1:2])
+      x_cluster <- data.frame(pca_x$scores,model$cluster, meta.data$color, meta.data$Time)
+      x_cluster[order(as.numeric(x_cluster$meta.data.Time)),]->x_cluster
+
+      model$cluster->meta.data$cluster
+      data.magic$cluster<-meta.data$cluster
+      top100 <- head(VariableFeatures(seur), 100)
+      ####Labeling the clusters with KS test
+      data.df$cluster<-data.magic$cluster
+
+      #Run MAGIC
+      data_MAGIC <- Rmagic::magic(data.filtered, genes=top100,
+                                  knn=15)
+      as.data.frame(data_MAGIC)->data.magic
+      data.magic$time <- meta.data$Time
+      data.magic$cluster<-meta.data$cluster
+
+      x_cluster$ks.scores<-0
+
+      for(state in 1:states.no){
+        name <- paste0("clust.", state, ".lab")
+        (data.magic %>% filter(cluster==state))[1:(dim(data.magic)[2]-2)]->exp.mat
+        colnames(exp.mat)->genes
+        KS.label.me(exp.mat, genes, top100)->clust.lab
+        assign(name, clust.lab)
+        x_cluster[x_cluster$model.cluster==state,]$ks.scores<-clust.lab
+      }
+
+      #you would need to modify this if adding more states - this is hardcoded for 3 states
+      clust.labs <- data.frame(type=c(rep("1", length(clust.1.lab)), rep("2", length(clust.2.lab)), rep("3", length(clust.3.lab))),
+                               value = c(clust.1.lab, clust.2.lab, clust.3.lab))
+
+
+
+      as.matrix(as.numeric(clust.labs$value))->my.mat
+      colnames(my.mat)<-"KS.score"
+      rownames(my.mat)<-as.character(seq(1, length(my.mat[,1])))
+      cbind(my.mat, as.numeric(clust.labs$type))->my.mat
+      colnames(my.mat)<-c("KS.score", "Cluster")
+      colnames(clust.labs)<-c("cluster", "score")
+      clust.labs[order(clust.labs$score),]->clust.labs
+
+      #again hardcoded for three states modify accordingly
+      x_cluster[x_cluster$model.cluster==unique(clust.labs$cluster)[1],]$model.cluster<-"Epithelial"
+      x_cluster[x_cluster$model.cluster==unique(clust.labs$cluster)[2],]$model.cluster<-"Hybrid"
+      x_cluster[x_cluster$model.cluster==unique(clust.labs$cluster)[3],]$model.cluster<-"Mesenchymal"
+
+      #x_cluster$meta.data.Time <- factor(x_cluster$meta.data.Time,                 # Relevel group factor
+      #                                   levels = as.numeric(x_cluster$meta.data.Time))
+      clusterM.day <- NA
+      clusterH.day <- NA
+      clusterE.day <- NA
+      for(i in 1:length(unique(x_cluster$meta.data.Time))){
+        timepoint <- unique(x_cluster$meta.data.Time)[i]
+        x_cluster %>% filter(meta.data.Time==timepoint)->data.time
+        nrow(data.time %>% filter(model.cluster=="Mesenchymal"))/nrow(data.time)->clust.M.perc
+        nrow(data.time %>% filter(model.cluster=="Hybrid"))/nrow(data.time)->clust.H.perc
+        nrow(data.time %>% filter(model.cluster=="Epithelial"))/nrow(data.time)->clust.E.perc
+        clusterM.day <- c(clusterM.day, clust.M.perc)
+        clusterH.day <- c(clusterH.day, clust.H.perc)
+        clusterE.day <- c(clusterE.day, clust.E.perc)
+      }
+      clusterM.day[2:length(clusterM.day)]->clusterM.day
+      clusterH.day[2:length(clusterH.day)]->clusterH.day
+      clusterE.day[2:length(clusterE.day)]->clusterE.day
+      data.frame(clusterM.day, clusterH.day, clusterE.day, unique(x_cluster$meta.data.Time))->df.cluster
+      colnames(df.cluster)<-c("Mesenchymal", "Hybrid", "Epithelial", "time")
+      melt(df.cluster, "time")->melted.clust
+      if(!dir.exists("COMET_populated_files")){
+        dir.create("COMET_populated_files")
+      }
+      write.csv(melted.clust, paste0("COMET_populated_files/", data.input$Sample, "_", turn, "_", cutoff, ".csv"))
+      saveRDS(melted.clust, paste0("COMET_populated_files/", data.input$Sample, "_", turn, "_", cutoff, ".Rds"))
     }
 
-    umapped <- umap(data.magic[1:(length(colnames(data.magic))-1)])
-    meta.data$Time->my.colors
-
-    for(i in 1:length(timepoints)){
-      my.colors[my.colors==timepoints[i]]<-color.scheme[i]
-    }
-    #We are considering only 3 states with 1 hybrid
-    states.no <- 3
-    kmeans(umapped$layout, states.no)->model
-
-    data.frame(as.data.frame(umapped$layout)$V1, as.data.frame(umapped$layout)$V2, model$cluster)->df.model
-
-    for(state in 1:states.no){
-      name <- paste0("df.model.", state)
-      df.model %>% filter(model.cluster==state)->df.model.hold
-      assign(name, df.model.hold)
-    }
-
-    pca_x <- princomp(df.model[1:2])
-    x_cluster <- data.frame(pca_x$scores,model$cluster, meta.data$color, meta.data$Time)
-    x_cluster[order(as.numeric(x_cluster$meta.data.Time)),]->x_cluster
-
-    model$cluster->meta.data$cluster
-    data.magic$cluster<-meta.data$cluster
-    top100 <- head(VariableFeatures(seur), 100)
-    ####Labeling the clusters with KS test
-    data.df$cluster<-data.magic$cluster
-
-    #Run MAGIC
-    data_MAGIC <- Rmagic::magic(data.filtered, genes=top100,
-                                knn=15)
-    as.data.frame(data_MAGIC)->data.magic
-    data.magic$time <- meta.data$Time
-    data.magic$cluster<-meta.data$cluster
-
-    x_cluster$ks.scores<-0
-
-    for(state in 1:states.no){
-      name <- paste0("clust.", state, ".lab")
-      (data.magic %>% filter(cluster==state))[1:(dim(data.magic)[2]-2)]->exp.mat
-      colnames(exp.mat)->genes
-      KS.label.me(exp.mat, genes, top100)->clust.lab
-      assign(name, clust.lab)
-      x_cluster[x_cluster$model.cluster==state,]$ks.scores<-clust.lab
-    }
-
-    #you would need to modify this if adding more states - this is hardcoded for 3 states
-    clust.labs <- data.frame(type=c(rep("1", length(clust.1.lab)), rep("2", length(clust.2.lab)), rep("3", length(clust.3.lab))),
-                             value = c(clust.1.lab, clust.2.lab, clust.3.lab))
-
-
-
-    as.matrix(as.numeric(clust.labs$value))->my.mat
-    colnames(my.mat)<-"KS.score"
-    rownames(my.mat)<-as.character(seq(1, length(my.mat[,1])))
-    cbind(my.mat, as.numeric(clust.labs$type))->my.mat
-    colnames(my.mat)<-c("KS.score", "Cluster")
-    colnames(clust.labs)<-c("cluster", "score")
-    clust.labs[order(clust.labs$score),]->clust.labs
-
-    #again hardcoded for three states modify accordingly
-    x_cluster[x_cluster$model.cluster==unique(clust.labs$cluster)[1],]$model.cluster<-"Epithelial"
-    x_cluster[x_cluster$model.cluster==unique(clust.labs$cluster)[2],]$model.cluster<-"Hybrid"
-    x_cluster[x_cluster$model.cluster==unique(clust.labs$cluster)[3],]$model.cluster<-"Mesenchymal"
-
-    #x_cluster$meta.data.Time <- factor(x_cluster$meta.data.Time,                 # Relevel group factor
-    #                                   levels = as.numeric(x_cluster$meta.data.Time))
-    clusterM.day <- NA
-    clusterH.day <- NA
-    clusterE.day <- NA
-    for(i in 1:length(unique(x_cluster$meta.data.Time))){
-      timepoint <- unique(x_cluster$meta.data.Time)[i]
-      x_cluster %>% filter(meta.data.Time==timepoint)->data.time
-      nrow(data.time %>% filter(model.cluster=="Mesenchymal"))/nrow(data.time)->clust.M.perc
-      nrow(data.time %>% filter(model.cluster=="Hybrid"))/nrow(data.time)->clust.H.perc
-      nrow(data.time %>% filter(model.cluster=="Epithelial"))/nrow(data.time)->clust.E.perc
-      clusterM.day <- c(clusterM.day, clust.M.perc)
-      clusterH.day <- c(clusterH.day, clust.H.perc)
-      clusterE.day <- c(clusterE.day, clust.E.perc)
-    }
-    clusterM.day[2:length(clusterM.day)]->clusterM.day
-    clusterH.day[2:length(clusterH.day)]->clusterH.day
-    clusterE.day[2:length(clusterE.day)]->clusterE.day
-    data.frame(clusterM.day, clusterH.day, clusterE.day, unique(x_cluster$meta.data.Time))->df.cluster
-    colnames(df.cluster)<-c("Mesenchymal", "Hybrid", "Epithelial", "time")
-    melt(df.cluster, "time")->melted.clust
-    if(!dir.exists("COMET_populated_files")){
-      dir.create("COMET_populated_files")
-    }
-    write.csv(melted.clust, paste0("COMET_populated_files/", data.input$Sample, "_", turn, "_", cutoff, ".csv"))
-    saveRDS(melted.clust, paste0("COMET_populated_files/", data.input$Sample, "_", turn, "_", cutoff, ".Rds"))
-    }
   }
 
   return(df.cluster)
@@ -255,15 +258,22 @@ KS.label.me <- function(exp.mat, genes, topgenes){
 #' for the data and metadata
 #' @param input.data.dir this is the directory where the input file
 #' should be saved in
+#' @param parallelize this boolean variable indicates whether code is parallelized
+#' over cores or not, set parallelize to 'TRUE' for parallelizing code over cores
 #'
 #' @return does not return, saves the files in the COMET_populated_files dir
 #' @export
-generate_pipeline_files <- function(data.inputs, tables.dir, input.data.dir){
+generate_pipeline_files <- function(data.inputs, tables.dir, input.data.dir, parallelize){
 
+  if(parallelize==TRUE){
+    for(cutoff in seq(5, 100, 5)){
+      run_pipeline(data.inputs, tables.dir, input.data.dir, cutoff)
 
-  for(cutoff in seq(5, 100, 5)){
-  run_pipeline(data.inputs, tables.dir, input.data.dir, cutoff)
-
+    }
+  }else{
+    mclapply(seq(5, 100, 5), function(cutoff) {
+      run_pipeline(data.inputs, tables.dir, input.data.dir, cutoff)
+    }, mc.cores = parallel::detectCores())
   }
 
 
@@ -317,40 +327,40 @@ calculate_conf_intervals<-function(data.inputs){
 DTW_calculate <- function(data.inputs,  MET.range){
   for(k in 1:nrow(data.inputs)){
     data.inputs[k,]->data.input
-  #initialize matrix
-  matmat<-matrix(nrow=length(seq(5, 100, 5)), ncol=(3+1))
-  h<-1
-  for(cutoff in seq(5, 100, 5)){
+    #initialize matrix
+    matmat<-matrix(nrow=length(seq(5, 100, 5)), ncol=(3+1))
+    h<-1
+    for(cutoff in seq(5, 100, 5)){
 
-    df <- readRDS(paste0("Confidence_Interval_Calculations/", data.input$Sample, "_", cutoff, ".Rds"))
-    #Exclude data from MET range
-    df %>% filter(!(time %in% MET.range))->df
-    #iterate over states and find DTW
-    for(state in unique(df$variable)){
+      df <- readRDS(paste0("Confidence_Interval_Calculations/", data.input$Sample, "_", cutoff, ".Rds"))
+      #Exclude data from MET range
+      df %>% filter(!(time %in% MET.range))->df
+      #iterate over states and find DTW
+      for(state in unique(df$variable)){
 
-      df %>% filter(variable==state)->df.state
+        df %>% filter(variable==state)->df.state
 
-      dtw::dtw(df.state$value, flow.dat[state])$distance->dtw.d
+        dtw::dtw(df.state$value, flow.dat[state])$distance->dtw.d
 
-      matmat[h, which(unique(df$variable)==state)]<-dtw.d
+        matmat[h, which(unique(df$variable)==state)]<-dtw.d
+      }
+      h+1->h
     }
-    h+1->h
-  }
-  rownames(matmat)<-seq(5, 100, 5)
-  #Save in matrix
-  sum.mats<-0
-  for(state in 1:3){
+    rownames(matmat)<-seq(5, 100, 5)
+    #Save in matrix
+    sum.mats<-0
+    for(state in 1:3){
 
-    matmat[,state]+sum.mats->sum.mats
+      matmat[,state]+sum.mats->sum.mats
 
-  }
-  #Find total DTW distance
-  sum.mats->matmat[,(4)]
-  #matmat[,1]+matmat[,2]+matmat[,3]->matmat[,4]
-  if(!dir.exists("DTW_Matrix")){
-    dir.create("DTW_Matrix")
-  }
-  saveRDS(matmat, paste0("DTW_Matrix/", data.input$Sample, "_DTW_Matrix.Rds"))
+    }
+    #Find total DTW distance
+    sum.mats->matmat[,(4)]
+    #matmat[,1]+matmat[,2]+matmat[,3]->matmat[,4]
+    if(!dir.exists("DTW_Matrix")){
+      dir.create("DTW_Matrix")
+    }
+    saveRDS(matmat, paste0("DTW_Matrix/", data.input$Sample, "_DTW_Matrix.Rds"))
   }
 }
 
@@ -412,8 +422,8 @@ fit.CTMC <- function(data.input, MET.range, opt.cutoff){
 
   #values at the point where hybrid peaks
   pi<- c((opt.vals.emt %>% filter(variable == "Epithelial") %>% filter(time ==ind.first.phase$time))$value,
-  (opt.vals.emt %>% filter(variable == "Hybrid") %>% filter(time ==ind.first.phase$time))$value,
-  (opt.vals.emt %>% filter(variable == "Mesenchymal") %>% filter(time ==ind.first.phase$time))$value)
+         (opt.vals.emt %>% filter(variable == "Hybrid") %>% filter(time ==ind.first.phase$time))$value,
+         (opt.vals.emt %>% filter(variable == "Mesenchymal") %>% filter(time ==ind.first.phase$time))$value)
 
   #Initial values
   E_1 <- (opt.vals.emt %>% filter(variable == "Epithelial") %>% filter(time ==min(opt.vals.emt$time)))$value
@@ -468,15 +478,15 @@ fit.CTMC <- function(data.input, MET.range, opt.cutoff){
     M_st<-NULL
     loop_to <- length(timepoints)/CTMC.scale
   }else{
-  for(jj in seq(1, ind.first.phase$time/CTMC.scale)){
-    p <- transition_matrix(lambda_E, lambda_M, mu, mu, inc_num*(jj-1));
-    vect = p0 %*% p
-    E_st[jj] <- vect[,1]
-    H_st[jj] <- vect[,2]
-    M_st[jj] <- vect[,3]
-    p0 <- vect
-    loop_to <- (max(timepoints)-ind.first.phase$time)/(CTMC.scale*ind.first.phase$time);
-  }
+    for(jj in seq(1, ind.first.phase$time/CTMC.scale)){
+      p <- transition_matrix(lambda_E, lambda_M, mu, mu, inc_num*(jj-1));
+      vect = p0 %*% p
+      E_st[jj] <- vect[,1]
+      H_st[jj] <- vect[,2]
+      M_st[jj] <- vect[,3]
+      p0 <- vect
+      loop_to <- (max(timepoints)-ind.first.phase$time)/(CTMC.scale*ind.first.phase$time);
+    }
   }
 
   #Second phase CTMC
@@ -496,8 +506,8 @@ fit.CTMC <- function(data.input, MET.range, opt.cutoff){
   trans_lambda_E <- alph
 
   fminresrev <- pracma::fminsearch(find.min.alpha, x0 = c(1, 0.1),E_cad = E_cad,hybrid =  hybrid,
-                                ZEB = ZEB, M_sc = 1/(ZEB[1]/E_cad[1]), Mu_sc = 1/(hybrid[1]/E_cad[1]), eq = 4,
-                                ref_eq_day = 8, timepoints = c(max(timepoints), MET.range), method="Nelder-Mead")
+                                   ZEB = ZEB, M_sc = 1/(ZEB[1]/E_cad[1]), Mu_sc = 1/(hybrid[1]/E_cad[1]), eq = 4,
+                                   ref_eq_day = 8, timepoints = c(max(timepoints), MET.range), method="Nelder-Mead")
   alph_rev <- fminresrev$xmin[1]
 
   E_end<-c()
