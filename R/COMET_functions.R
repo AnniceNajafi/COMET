@@ -260,10 +260,12 @@ KS.label.me <- function(exp.mat, genes, topgenes){
 #' @export
 generate_pipeline_files <- function(data.inputs, tables.dir, input.data.dir){
 
+
   for(cutoff in seq(5, 100, 5)){
   run_pipeline(data.inputs, tables.dir, input.data.dir, cutoff)
 
   }
+
 
 }
 
