@@ -2,15 +2,21 @@
 
 COMET is a computational framework for inferring EMT trajectories from timecourse single-cell RNA sequencing data. Here, we are providing COMET as an R package that can be installed and run for scoring scRNA sequencing data. 
 COMET is now publicly available as an R package and is published in Cell iScience. For more information please refer to <a href="https://www.sciencedirect.com/science/article/pii/S2589004223010416">Najafi, A., Jolly, M. K., & George, J. T. (2023). Population Dynamics of EMT Elucidates the Timing and Distribution of Phenotypic Intra-tumoral Heterogeneity. iScience.</a>
+<hr>
 <br>
 <h3>UPDATE (04/09/24): Parallelizing code over cores to increase the speed of code is added to the 'generate_pipeline_files' function of the R package. </h3>
+<br>
+<hr>
 <br>
 <h3>UPDATE (03/30/24): A web-based application of COMET that employs non-symmetric transition rates into the hybrid state is available. <a href=https://najafiannice.shinyapps.io/EMT_app_trial/>Access shinyCOMET here!</a></h3>
 <br>
 Please use username "guest" and password "1234" to login. If you are unable to login, please refresh the application.
 <br>
+<hr>
+<br>
 <h3>UPDATE (01/15/24): Protocol on COMET is published in STAR Protocols. <a href=https://www.sciencedirect.com/science/article/pii/S2666166723007864>Access protocol here!</a></h3>
 <br>
+<hr>
 <br>
 <img src="https://github.com/TAMUGeorgeGroup/COMET/assets/62211977/16e1d9a1-bbe7-4138-a9d5-4ba2aab8a35d" alt="model-diagram" width="400" height="550">
 <h2>Guidelines</h2> 
