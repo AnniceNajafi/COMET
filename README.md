@@ -81,7 +81,7 @@ input.files.dir <- "Input_Files/"
 data.inputs <- read.csv(paste0(tables.dir, "DataTableTest.csv"), sep=",")
 ```
 
-Step IV. Run the pipeline
+Step IV. Run the pipeline<br>
 For the example dataset, data coming from timepoints 7.33, 8, and 10 came were going through MET. To parallelize your code over cores set the parallelize argument to 'TRUE' for the 'generate_pipeline_files' function. 
 
 ```
